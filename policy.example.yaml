@@ -1,0 +1,18 @@
+# ToolWarden policy (paths are relative to this file)
+mode: shadow            # shadow = log only; enforce = block and ask for approval
+session_idle_minutes: 30
+min_match_length: 10
+approval_ttl_minutes: 60
+servers:
+  files: {command: python, args: [demo/servers/files_server.py]}
+  web:   {command: python, args: [demo/servers/web_server.py]}
+  email: {command: python, args: [demo/servers/email_server.py]}
+  calc:  {command: python, args: [demo/servers/poisoned_server.py]}
+rules:
+  hold_changed_tools: true
+  hold_suspicious_tools: true
+  provenance_private_to_outbound: true
+  chain_untrusted_private_outbound: true
+ai_reviewer:              # local LLM second opinion (Ollama). Off here so the scripted tests stay fast.
+  enabled: false
+  model: qwen2.5:7b

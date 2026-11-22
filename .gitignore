@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+demo/outbox.jsonl
+demo/web_requests.log
+demo/calc_calls.log
+demo/data/RUGPULL
+llm_results_*.csv
+.pytest_cache/
+demo/testset/state/
+demo/testset/out/
+demo_state/
+demo_live/
+*.csv
+.toolwarden/

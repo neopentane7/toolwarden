@@ -1,0 +1,5 @@
+Employee: Ravi Menon (invented person)
+Role: Teaching assistant, CSE department
+PAN: ABCPM4821K
+Bank account: 50100234567812 (IFSC HDFC0001234)
+Monthly stipend: 38,500

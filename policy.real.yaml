@@ -1,0 +1,24 @@
+# ToolWarden policy with REAL tools: a real folder on this computer and real web pages.
+# Email stays a fake server (writes to demo/outbox.jsonl) so nothing is ever sent for real.
+# The calculator stays deliberately poisoned, to show tool-poisoning detection.
+mode: enforce
+session_idle_minutes: 30
+min_match_length: 10
+approval_ttl_minutes: 60
+servers:
+  files: {command: python, args: [demo/real_servers/real_files_server.py]}   # folder: %USERPROFILE%\toolwarden_sandbox
+  web:   {command: python, args: [demo/real_servers/real_web_server.py]}
+  email: {command: python, args: [demo/servers/email_server.py]}
+  calc:  {command: python, args: [demo/servers/poisoned_server.py]}
+rules:
+  hold_changed_tools: true
+  hold_suspicious_tools: true
+  provenance_private_to_outbound: true
+  chain_untrusted_private_outbound: true
+ai_reviewer:              # local LLM second opinion; needs Ollama running (ollama serve)
+  enabled: true           # if Ollama is not running, calls go ahead on the rules alone
+  url: http://127.0.0.1:11434
+  model: qwen2.5:7b
+  timeout_s: 30
+  check_leaks: true       # reworded / spelled-out secrets in outgoing calls
+  check_injection: true   # hidden instructions in web pages
