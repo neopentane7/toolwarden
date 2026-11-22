@@ -7,6 +7,7 @@ still be callable; this was found in the 18 Nov spike).
 
 from __future__ import annotations
 
+import base64
 import re
 from contextlib import AsyncExitStack
 from pathlib import Path
@@ -28,8 +29,45 @@ from .state import (ApprovalStore, EventLog, PinStore, SessionTracker, private_s
 SEP = "__"
 
 
+def _blob_text(blob: str | None) -> str:
+    """A base64 resource as text, when it is text (a .txt or .env file sent as a blob)."""
+    try:
+        txt = base64.b64decode(blob or "").decode("utf-8")
+    except ValueError:  # not base64 (binascii.Error) or not UTF-8 (UnicodeDecodeError)
+        return ""
+    return txt if sum(ch.isprintable() or ch.isspace() for ch in txt) > 0.9 * len(txt) else ""
+
+
+def _strings(value) -> list[str]:
+    """Every string in structured tool output (JSON), so private values and injected orders in
+    it are checked like text. Keys that are plain field names ('result', 'body') are skipped."""
+    if isinstance(value, dict):
+        return [s for k, v in value.items()
+                for s in ([] if str(k).isidentifier() else [str(k)]) + _strings(v)]
+    if isinstance(value, (list, tuple)):
+        return [s for v in value for s in _strings(v)]
+    if value is None or isinstance(value, bool):
+        return []
+    return [str(value)]
+
+
 def _text_of(result) -> str:
-    return "\n".join(getattr(c, "text", "") or "" for c in (result.content or []))
+    """Everything the model can read in a tool result: text parts, embedded resources (text, or
+    blobs that decode to text), resource link names and descriptions, and structured output.
+    Only text parts were read before (fix 22 Nov review: a secret or an injected order inside an
+    embedded resource or structured output went unchecked). Images and audio are not checked."""
+    parts: list[str] = []
+    for c in result.content or []:
+        res = getattr(c, "resource", None)  # embedded resource: text or blob contents
+        parts += [getattr(c, "text", None) or "",
+                  getattr(res, "text", None) or _blob_text(getattr(res, "blob", None)),
+                  getattr(c, "name", None) or "", getattr(c, "description", None) or ""]
+    seen = "\n".join(p for p in parts if p)
+    structured = (getattr(result, "structured_content", None)
+                  or getattr(result, "structuredContent", None))
+    # Servers often send the same data as text and as structured output; add only what is new.
+    extra = [s for s in _strings(structured) if s.strip() and s not in seen]
+    return "\n".join([seen, *extra]) if extra else seen
 
 
 def strong_injection_flags(text: str) -> list[str]:
@@ -149,7 +187,9 @@ class Guard:
         if d.action != "allow":
             if d.action == "approval_requested" and self.policy.mode == "enforce":
                 # Shadow mode never blocks, so it files no requests (bug fixed 19 Nov).
-                preview = f"{key} ({d.rule})"  # no arguments: requests may leave the machine
+                # No arguments in the request file, since requests may later leave this computer
+                # (Telegram). The dashboard card shows them from the redacted local log instead.
+                preview = f"{key} ({d.rule})"
                 self.approvals.request(d.request_id, key, d.rule, preview, session.sid)
             if self.policy.mode == "enforce":
                 self.log.write({**base, "decision": d.action, "request_id": d.request_id}, redact)

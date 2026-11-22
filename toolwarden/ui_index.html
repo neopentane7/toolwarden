@@ -243,12 +243,13 @@ td .reasons{font-size:12.5px;color:var(--ink-2);margin-top:3px}
       ? `AI reviewer${ai.model ? ` <b>${esc(ai.model)}</b>` : ""}: ${ai.checks} check${ai.checks === 1 ? "" : "s"}, ${ai.flagged} flagged${ai.median_ms != null ? `, about ${ai.median_ms < 1000 ? ai.median_ms + " ms" : (ai.median_ms/1000).toFixed(1) + " s"} each` : ""}${ai.errors ? `, ${ai.errors} unreachable` : ""}`
       : "AI reviewer: no checks yet (rules only)";
     const c = s.counts;
-    $("tally").innerHTML = [
-      [c.calls, "tool calls"], [c.allowed, "allowed"],
-      [c.stopped, s.mode === "shadow" ? "would stop" : "stopped", c.stopped ? "bad" : ""],
-      [c.pending, "waiting for you", c.pending ? "warn" : ""],
-      [c.held_tools, "tools held", c.held_tools ? "bad" : ""],
-    ].map(([n, l, k]) => `<div class="${k||""}"><b>${n}</b><span>${l}</span></div>`).join("");
+    // "Would stop" (shadow mode) and "stopped" are separate tiles; a log that has both shows both.
+    const tiles = [[c.calls, "tool calls"], [c.allowed, "allowed"]];
+    if (s.mode === "shadow" || c.would_stop) tiles.push([c.would_stop, "would stop", c.would_stop ? "bad" : ""]);
+    if (s.mode !== "shadow" || c.stopped) tiles.push([c.stopped, "stopped", c.stopped ? "bad" : ""]);
+    tiles.push([c.pending, "waiting for you", c.pending ? "warn" : ""],
+               [c.held_tools, "tools held", c.held_tools ? "bad" : ""]);
+    $("tally").innerHTML = tiles.map(([n, l, k]) => `<div class="${k||""}"><b>${n}</b><span>${l}</span></div>`).join("");
   }
 
   function renderQueue(s) {

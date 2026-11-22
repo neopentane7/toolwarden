@@ -74,11 +74,18 @@ class PinStore:
 
 class ApprovalStore:
     """Block-then-retry approvals. The guard writes a pending request; an admin approves or
-    denies it (command line now, Telegram or a web page later); the identical retry then passes."""
+    denies it (command line now, Telegram or a web page later); the identical retry then passes.
+
+    Each request stores the time limit of the guard that filed it, so the dashboard and the
+    command line, which never read the policy, expire it when the guard does (fix 22 Nov review:
+    they always used 60 minutes, whatever approval_ttl_minutes said)."""
 
     def __init__(self, path: Path, ttl_minutes: float):
         self.path = path
-        self.ttl = ttl_minutes * 60
+        self.ttl = ttl_minutes * 60  # for requests filed here, and older files without a limit
+
+    def _ttl(self, rec: dict) -> float:
+        return rec.get("ttl_s", self.ttl)
 
     @staticmethod
     def request_id(tool_key: str, args: dict) -> str:
@@ -92,10 +99,10 @@ class ApprovalStore:
         rec = self._load().get(rid)
         if not rec:
             return None
-        now = time.time()
-        if rec["status"] in ("approved", "denied") and now - rec.get("decided_at", 0) > self.ttl:
+        now, ttl = time.time(), self._ttl(rec)
+        if rec["status"] in ("approved", "denied") and now - rec.get("decided_at", 0) > ttl:
             return "expired"
-        if rec["status"] == "pending" and now - rec.get("created_at", 0) > self.ttl:
+        if rec["status"] == "pending" and now - rec.get("created_at", 0) > ttl:
             return "expired"  # nobody answered in time; a new attempt files a fresh request
         return rec["status"]
 
@@ -109,7 +116,7 @@ class ApprovalStore:
         now = time.time()
         return any(r["status"] == "approved" and r["tool"] == tool_key and r["rule"] == rule
                    and session is not None and r.get("session") == session
-                   and now - r.get("decided_at", 0) <= self.ttl for r in self._load().values())
+                   and now - r.get("decided_at", 0) <= self._ttl(r) for r in self._load().values())
 
     def request(self, rid: str, tool_key: str, rule: str, preview: str,
                 session: str | None = None) -> None:
@@ -118,7 +125,7 @@ class ApprovalStore:
         # been sent while nothing new appeared for the admin).
         if rid not in data or self.status(rid) == "expired":
             data[rid] = {"status": "pending", "tool": tool_key, "rule": rule, "session": session,
-                         "preview": preview, "created_at": time.time()}
+                         "preview": preview, "created_at": time.time(), "ttl_s": self.ttl}
             _write_json(self.path, data)
 
     def decide(self, rid: str, approve: bool) -> bool:
