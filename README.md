@@ -4,7 +4,7 @@ A local security proxy for MCP agents. It sits between an AI app (Claude Desktop
 VS Code) and the MCP tool servers it uses, watches what tools do, and stops poisoned tools and
 data leaks. It is built to **learn first** (shadow mode: log only) and **then enforce**.
 
-Status: early prototype (about 25% of the 10-day plan). Not for real data yet.
+Status: prototype (v0.9.1). Not for real data yet.
 
 ## What works now
 
@@ -27,7 +27,7 @@ Status: early prototype (about 25% of the 10-day plan). Not for real data yet.
 | Local dashboard (`python run_toolwarden.py ui`): approve or deny held calls, live activity, tools, suggested policy | Done |
 | AI reviewer (optional, local Ollama model): catches reworded or spelled-out secrets and hidden instructions in web pages; can only tighten decisions | Done; measured with `demo/ai_reviewer_eval.py` |
 | Fresh end-to-end test set (`demo/testset`): 22 cases through the real guard, rules and AI reviewer, viewable in the dashboard | Done |
-| Tests | 23 passing |
+| Tests | 28, in `tests/test_core.py` |
 
 ## Fixes from the 19 Nov audit
 
@@ -58,6 +58,15 @@ Status: early prototype (about 25% of the 10-day plan). Not for real data yet.
 | Approval card did not show what was being sent | Admin approved blind | Card shows the call's arguments, with private content redacted |
 | Scenario "data left?" ignored the poisoned calculator's channel | Shadow mode under-reported leaks | Calculator log counted too |
 
+## Fixes from the 22 Nov review
+
+| Bug | Effect | Fix |
+| --- | --- | --- |
+| "message" counted as a sending word | `get_messages`, `read_messages` and `list_messages` were labelled outbound, so the messages they returned were never tracked as private | "message" is a noun now. A read verb plus a message word (`get_messages`, `search_emails`, `get_thread_replies`) means private; `send_message`, `create_message` and `message_user` still count as outbound |
+| Only the text parts of a tool result were read | A secret or an injected order inside an embedded resource or structured output went unchecked | Embedded resources (text, and blobs that decode to text), resource link descriptions and structured output are checked too |
+| Dashboard and command line always used a 60-minute approval limit | With a different `approval_ttl_minutes`, they showed requests as open or expired when the guard did not | Each request stores the limit of the guard that filed it |
+| Shadow-mode flags counted as stops | After switching from shadow to enforce, calls that only would have been stopped showed as stopped | Separate "would stop" and "stopped" counts |
+
 ## Not done yet
 
 Telegram approvals, one-command installer, larger attack set (target about 25-40) and benign server set (20-30
@@ -67,7 +76,7 @@ servers), metrics on latency and prompts across many runs, README threat model.
 
 ```bash
 pip install -r requirements.txt
-python -m pytest -q                         # 21 tests
+python -m pytest -q                         # 28 tests
 python demo/run_scenarios.py --mode enforce # attacks blocked, benign allowed
 python demo/run_scenarios.py --mode shadow  # nothing blocked; shadow report + proposed policy
 ```
@@ -232,6 +241,10 @@ Detection:
 - Sharing private notes in your own words is allowed by design; only secrets are meant to be stopped.
 - Risk labels come from keywords in tool names and descriptions; unusual tools will be mislabelled.
   Provenance runs on every tool, but the chain rule and AI leak check depend on the labels.
+  Tools that read messages are recognised by a read verb plus a message word in the name
+  (`get_messages`, `search_emails`); other names need `label_overrides` in the policy.
+- Images and audio in tool results are not checked; text, embedded resources and structured
+  output are.
 - Tools are trusted the first time they are seen unless their description looks like an attack.
 
 Architecture:

@@ -46,8 +46,12 @@ def build_state(sd: Path) -> dict:
                    for k, v in approvals.items()),
                   key=lambda r: r.get("created_at", 0), reverse=True)[:50]
     mode = next((e.get("mode") for e in reversed(calls) if e.get("mode")), None)
-    stopped = [e for e in calls if e["decision"] != "allow"]
-    ai = [e for e in events if e.get("event") == "ai_review"]
+    # Real stops and shadow-mode flags are counted apart (fix 22 Nov review: after switching from
+    # shadow to enforce with the same state folder, calls that only would have been stopped were
+    # shown as stopped, and not as allowed although they went through).
+    stopped = [e for e in calls if e["decision"] in ("block", "approval_requested")]
+    would = [e for e in calls if e["decision"] == "would_block"]
+    ai =[e for e in events if e.get("event") == "ai_review"]
     ok_ms = sorted(e["ms"] for e in ai if not e.get("error"))
     ai_info = {"model": ai[-1].get("model") if ai else None, "checks": len(ai),
                "flagged": sum(bool(e.get("flagged")) for e in ai),
@@ -55,8 +59,8 @@ def build_state(sd: Path) -> dict:
                "median_ms": ok_ms[len(ok_ms) // 2] if ok_ms else None}
     return {
         "mode": mode,
-        "counts": {"calls": len(calls), "allowed": len(calls) - len(stopped),
-                   "stopped": len(stopped), "pending": sum(a["status"] == "pending" for a in appr),
+        "counts": {"calls": len(calls), "allowed": len(calls) - len(stopped) - len(would),
+                   "stopped": len(stopped), "would_stop": len(would), "pending":sum(a["status"] == "pending" for a in appr),
                    "tools": len(tools), "held_tools": sum(t["status"] != "approved" for t in tools)},
         "approvals": appr,
         "activity": [{"ts": e["ts"], "tool": e["tool"], "decision": e["decision"],
